@@ -36,6 +36,8 @@ summary::after { content: " ▾"; color: var(--muted); }
 .pop label:hover { background: var(--panel); }
 /* a check box keeps its own size: the rules for text boxes (full width, flex: 1, padding) are not for it */
 .pop input[type=checkbox] { flex: none; width: auto; margin: 0; padding: 0; }
+.pop .find { width: 100%; padding: 5px 8px; font-size: 13px; margin-bottom: 4px; }
+.pop label[hidden] { display: none; }
 .pop .n { color: var(--muted); margin-left: auto; padding-left: 10px; font-variant-numeric: tabular-nums; }
 .pop button { justify-self: end; margin-top: 4px; font-size: 12.5px; }
 

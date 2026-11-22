@@ -159,8 +159,19 @@ function fieldCell(f) {
       changed();
     } }),
     h("span", {}, v.value), h("span", { class: "n" }, count(v.count))));
-  det.append(h("div", { class: "pop" }, boxes.length ? boxes : h("span", { class: "n" }, "No values"),
-    h("button", { type: "button", onclick: () => { delete state.fields[f.key]; for (const b of det.querySelectorAll("input")) b.checked = false; relabel(); changed(); } },
+  // a box to find a value in a long list (more than 8, as the console has it): accents and case aside
+  const none = h("span", { class: "n", hidden: true }, "No values match");
+  const find = values.length > 8 ? h("input", { type: "search", class: "find", placeholder: "Find a value…", autocomplete: "off" }) : null;
+  const narrow = () => {
+    const q = fold(find ? find.value.trim() : "");
+    let shown = 0;
+    boxes.forEach((lab, i) => { lab.hidden = !!q && !fold(values[i].value).includes(q); if (!lab.hidden) shown += 1; });
+    none.hidden = !values.length || shown > 0;
+  };
+  if (find) find.addEventListener("input", narrow);
+  det.addEventListener("toggle", () => { if (det.open && find) { find.value = ""; narrow(); find.focus(); } });
+  det.append(h("div", { class: "pop" }, find, boxes.length ? boxes : h("span", { class: "n" }, "No values"), none,
+    h("button", { type: "button", onclick: () => { delete state.fields[f.key]; for (const b of det.querySelectorAll("input[type=checkbox]")) b.checked = false; relabel(); changed(); } },
       "Clear")));
   relabel();
   return cell(f.label, det);

@@ -36,7 +36,8 @@ its help articles (`demo_support`) — the page searches those until you name yo
   word. **R** beside the score: the ranking step put that result above one that matched more closely.
 - **Category**: the store's categories, each with how many records it has.
 - **Filter fields** — the ones declared in the console (Records → ⚙ Categories & filter fields): a list of values (each
-  with how many records have it; any of the ones ticked), a number or a date from – to, yes / no. Pick a category and only
+  with how many records have it; any of the ones ticked; a box to find a value when there are more than 8), a number or a
+  date from – to, yes / no. Pick a category and only
   the fields its records carry show, with their values, counts and ranges; a filter the new category cannot meet goes.
 - **Tags**: a click on a result's tag keeps the results carrying it (again: off); each tag says on hover how many records
   carry it. The tags picked and the fields set show as chips above the results, each with its ×.
