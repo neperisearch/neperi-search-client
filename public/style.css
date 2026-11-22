@@ -1,0 +1,23 @@
+:root { --bg: #ffffff; --fg: #1d2330; --muted: #6a7282; --border: #dfe3ea; --accent: #2f6fe4; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --bg: #14171d; --fg: #e5e8ee; --muted: #9aa2b1; --border: #2a303b; --accent: #7aa5ff; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+h1 { margin: 0 0 16px; font-size: 22px; }
+form { display: flex; gap: 8px; }
+select, input { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
+input { flex: 1; min-width: 0; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 0; font-size: 13px; }
+.legend mark { cursor: help; padding: 0 6px; }
+.info { color: var(--muted); font-size: 13px; min-height: 20px; margin: 10px 0; }
+.results { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.result { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+.title { font-weight: 650; color: var(--accent); }
+.snippet { margin: 6px 0; white-space: pre-line; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 12.5px; }
+/* the three kinds of match, as the Neperi console colours them */
+mark { color: inherit; border-radius: 3px; padding: 0 2px; }
+mark.exact { background: rgba(60, 207, 192, .22); box-shadow: inset 0 -2px 0 rgba(40, 180, 165, .9); }
+mark.similar { background: rgba(230, 180, 90, .22); box-shadow: inset 0 -2px 0 rgba(215, 160, 60, .95); cursor: help; }
+mark.letters { background: rgba(150, 110, 230, .2); box-shadow: inset 0 -2px 0 rgba(140, 100, 225, .9); padding: 0; }

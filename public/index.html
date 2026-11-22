@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Neperi Search sample</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Search</h1>
+    <form id="search" role="search" autocomplete="off">
+      <select id="store" aria-label="Data store"></select>
+      <input id="query" type="search" placeholder="Type a few letters, a typo, a word without accents…" aria-label="Search">
+    </form>
+    <p class="legend">
+      <mark class="exact" title="The word as typed (case and accents aside)">Exact keyword</mark>
+      <mark class="similar" title="A word close to the one typed, chosen by the search: a typo, a missing letter, part of a word">Similar word</mark>
+      <mark class="letters" title="The typed letters close together and in order, inside another word">Letter match</mark>
+    </p>
+    <p id="info" class="info"></p>
+    <ol id="results" class="results"></ol>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
