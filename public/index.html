@@ -13,9 +13,13 @@
       <select id="store" aria-label="Data store"></select>
       <input id="query" type="search" placeholder="Type a few letters, a typo, a word without accents…" aria-label="Search">
     </form>
+    <!-- the filters of the store: its categories, then the filter fields of the category picked (all of them under All) -->
+    <div id="filters" class="filters" aria-label="Filters"></div>
+    <!-- the conditions in use: the tags picked on the results and the fields set, each with its x -->
+    <div id="chips" class="chips"></div>
     <p class="legend">
       <mark class="exact" title="The word as typed (case and accents aside)">Exact keyword</mark>
-      <mark class="similar" title="A word close to the one typed, chosen by the search: a typo, a missing letter, part of a word">Similar word</mark>
+      <mark class="similar" title="A word close to the one typed, chosen by the search: a typo, a missing letter, a longer word that starts with it">Similar word</mark>
       <mark class="letters" title="The typed letters close together and in order, inside another word">Letter match</mark>
     </p>
     <p id="info" class="info"></p>

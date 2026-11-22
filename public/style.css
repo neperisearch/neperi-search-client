@@ -1,21 +1,70 @@
-:root { --bg: #ffffff; --fg: #1d2330; --muted: #6a7282; --border: #dfe3ea; --accent: #2f6fe4; color-scheme: light dark; }
-@media (prefers-color-scheme: dark) { :root { --bg: #14171d; --fg: #e5e8ee; --muted: #9aa2b1; --border: #2a303b; --accent: #7aa5ff; } }
+:root { --bg: #ffffff; --fg: #1d2330; --muted: #6a7282; --border: #dfe3ea; --panel: #f6f7f9; --accent: #2f6fe4;
+  --accent-soft: rgba(47, 111, 228, .12); color-scheme: light dark; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #14171d; --fg: #e5e8ee; --muted: #9aa2b1; --border: #2a303b; --panel: #1b1f27; --accent: #7aa5ff;
+    --accent-soft: rgba(122, 165, 255, .16); }
+}
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+main { max-width: 880px; margin: 0 auto; padding: 32px 16px; }
 h1 { margin: 0 0 16px; font-size: 22px; }
 form { display: flex; gap: 8px; }
 select, input { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; }
 input { flex: 1; min-width: 0; }
-input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, select:focus, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+button { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+
+/* the filters: a grid of cells as wide as each other, a label and its control; a range (from - to) takes two cells */
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); grid-auto-flow: row dense; gap: 8px 16px;
+  margin-top: 12px; align-items: center; }
+.filters:empty { display: none; }
+.cell { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 6px; align-items: center; position: relative; min-width: 0; }
+.cell.range { grid-column: span 2; grid-template-columns: 104px minmax(0, 1fr) auto minmax(0, 1fr); }
+@media (max-width: 560px) { .cell.range { grid-column: auto; } }
+.cell > span { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell select, .cell input { width: 100%; min-width: 0; padding: 5px 8px; font-size: 13.5px; }
+.cell .on, .cell details.on > summary { border-color: var(--accent); background: var(--accent-soft); }
+/* a list field: its values in a box that opens under it, one check box each (any of them) */
+details { position: relative; min-width: 0; }
+summary { list-style: none; border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; font-size: 13.5px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: " ▾"; color: var(--muted); }
+.pop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 100%; max-height: 280px; overflow: auto; background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); padding: 6px; display: grid; gap: 2px; }
+.pop label { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: 6px; font-size: 13.5px; cursor: pointer; white-space: nowrap; }
+.pop label:hover { background: var(--panel); }
+.pop .n { color: var(--muted); margin-left: auto; padding-left: 10px; font-variant-numeric: tabular-nums; }
+.pop button { justify-self: end; margin-top: 4px; font-size: 12.5px; }
+
+/* the conditions in use */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chips:empty { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--accent); background: var(--accent-soft);
+  border-radius: 999px; padding: 1px 4px 1px 10px; font-size: 13px; }
+.chip button { border: 0; background: none; padding: 0 6px; color: var(--muted); }
+.chips > button { font-size: 12.5px; padding: 2px 10px; border-radius: 999px; }
+
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0 0; font-size: 13px; }
 .legend mark { cursor: help; padding: 0 6px; }
 .info { color: var(--muted); font-size: 13px; min-height: 20px; margin: 10px 0; }
 .results { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .result { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-.title { font-weight: 650; color: var(--accent); }
+.head { display: flex; gap: 8px; align-items: baseline; }
+.title { font-weight: 650; color: var(--accent); flex: 1; min-width: 0; }
+.where { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .snippet { margin: 6px 0; white-space: pre-line; overflow-wrap: anywhere; }
-.meta { color: var(--muted); font-size: 12.5px; }
+.meta { color: var(--muted); font-size: 12.5px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.r { font-size: 10.5px; font-weight: 700; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; cursor: help; }
+/* a result's tags: the matched ones coloured as words are; a click filters by the tag */
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tag { font-size: 12px; border: 1px solid var(--border); border-radius: 999px; padding: 1px 9px; color: var(--muted); cursor: pointer;
+  background: none; }
+.tag:hover { border-color: var(--accent); color: var(--fg); }
+.tag.exact { border-color: rgba(40, 180, 165, .9); background: rgba(60, 207, 192, .14); color: inherit; }
+.tag.similar { border-color: rgba(215, 160, 60, .95); background: rgba(230, 180, 90, .16); color: inherit; }
+.tag.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 /* the three kinds of match, as the Neperi console colours them */
 mark { color: inherit; border-radius: 3px; padding: 0 2px; }
 mark.exact { background: rgba(60, 207, 192, .22); box-shadow: inset 0 -2px 0 rgba(40, 180, 165, .9); }
