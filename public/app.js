@@ -211,22 +211,40 @@ function tagChip(r, g) {
     } }, g);
 }
 
+// a result's score -- the record's own match score, lower is closer -- and «R» when the ranking step moved it up
+function meta(r) {
+  const score = Number(r.match_score ?? r.score);
+  return h("div", { class: "meta" },
+    h("span", { title: "The record's own match score: lower is closer" }, `score ${score.toFixed(3)}`),
+    r.reranked ? h("span", { class: "r", title: "Reranked: the ranking step put this record above one that matched more closely" }, "R") : null,
+    r.letter_match ? h("span", {}, "letter match") : null);
+}
+
+// a row of a table (an Excel / CSV file): its name cell as the title, the other cells as column: value, the matches marked
+// in each cell (cell_highlights: column -> [start, end) ranges in that cell's value)
+function rowItem(r, columns) {
+  const cols = (columns || Object.keys(r.cells)).filter((c) => r.cells[c] != null && String(r.cells[c]).trim() !== "");
+  const titleCol = cols.find((c) => /name|title|tên|tiêu đề|product/i.test(c)) || cols[0];
+  const cell = (c) => marked(String(r.cells[c]), r.cell_highlights?.[c], r.fuzzy, r.letter_match);
+  return h("li", { class: "result" },
+    h("div", { class: "head" }, h("div", { class: "title" }, titleCol ? cell(titleCol) : (r.id || ""))),
+    h("p", { class: "cells" }, cols.filter((c) => c !== titleCol).map((c) => h("span", {}, h("span", { class: "k" }, `${c}: `), cell(c)))),
+    meta(r));
+}
+
 function render(data) {
   const results = data.results || [];
   info.textContent = `${results.length} result${results.length === 1 ? "" : "s"}` + (data.took_ms != null ? ` · ${data.took_ms} ms` : "");
   list.replaceChildren(...results.map((r) => {
+    if (r.cells) return rowItem(r, data.columns);
     const title = r.title ? marked(r.title, r.title_highlights, r.fuzzy, r.letter_match) : (r.id || "");
     // the snippet (about 240 characters around the best match) with its own ranges: the whole text is not needed
     const snippet = r.snippet ? marked(r.snippet, r.snippet_highlights, r.fuzzy, r.letter_match) : null;
-    const score = Number(r.match_score ?? r.score);
     return h("li", { class: "result" },
       h("div", { class: "head" }, h("div", { class: "title" }, title), r.category ? h("span", { class: "where" }, r.category) : null),
       snippet && h("p", { class: "snippet" }, snippet),
       (r.tags || []).length ? h("div", { class: "tags" }, r.tags.map((g) => tagChip(r, g))) : null,
-      h("div", { class: "meta" },
-        h("span", { title: "The record's own match score: lower is closer" }, `score ${score.toFixed(3)}`),
-        r.reranked ? h("span", { class: "r", title: "Reranked: the ranking step put this record above one that matched more closely" }, "R") : null,
-        r.letter_match ? h("span", {}, "letter match") : null));
+      meta(r));
   }));
   if (results.length >= state.top && state.top < 20) {
     list.append(h("li", {}, h("button", { type: "button", onclick: () => { state.top = 20; run(); } }, "More results")));

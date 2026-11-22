@@ -54,6 +54,9 @@ summary::after { content: " ▾"; color: var(--muted); }
 .title { font-weight: 650; color: var(--accent); flex: 1; min-width: 0; }
 .where { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
 .snippet { margin: 6px 0; white-space: pre-line; overflow-wrap: anywhere; }
+/* a row of a table: its cells as column: value */
+.cells { display: flex; flex-wrap: wrap; gap: 2px 16px; margin: 6px 0; font-size: 14px; overflow-wrap: anywhere; }
+.cells .k { color: var(--muted); }
 .meta { color: var(--muted); font-size: 12.5px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .r { font-size: 10.5px; font-weight: 700; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; cursor: help; }
 /* a result's tags: the matched ones coloured as words are; a click filters by the tag */

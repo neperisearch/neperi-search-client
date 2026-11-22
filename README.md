@@ -40,6 +40,8 @@ its help articles (`demo_support`) — the page searches those until you name yo
   the fields its records carry show, with their values, counts and ranges; a filter the new category cannot meet goes.
 - **Tags**: a click on a result's tag keeps the results carrying it (again: off); each tag says on hover how many records
   carry it. The tags picked and the fields set show as chips above the results, each with its ×.
+- **Tables** (a store imported from an Excel / CSV file): a row shows its name cell as the title and its other cells as
+  `column: value`, the matches marked in each cell (`cell_highlights`).
 - **A shareable address**: `?q=…&category=…&tag=…` opens the same search.
 
 The public API searches with words: a page of the newest records of a category, with no words typed, is not offered yet.
