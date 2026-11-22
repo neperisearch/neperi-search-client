@@ -231,23 +231,35 @@ function meta(r) {
     r.letter_match ? h("span", {}, "letter match") : null);
 }
 
-// a row of a table (an Excel / CSV file): its name cell as the title, the other cells as column: value, the matches marked
-// in each cell (cell_highlights: column -> [start, end) ranges in that cell's value)
-function rowItem(r, columns) {
-  const cols = (columns || Object.keys(r.cells)).filter((c) => r.cells[c] != null && String(r.cells[c]).trim() !== "");
-  const titleCol = cols.find((c) => /name|title|tên|tiêu đề|product/i.test(c)) || cols[0];
-  const cell = (c) => marked(String(r.cells[c]), r.cell_highlights?.[c], r.fuzzy, r.letter_match);
-  return h("li", { class: "result" },
-    h("div", { class: "head" }, h("div", { class: "title" }, titleCol ? cell(titleCol) : (r.id || ""))),
-    h("p", { class: "cells" }, cols.filter((c) => c !== titleCol).map((c) => h("span", {}, h("span", { class: "k" }, `${c}: `), cell(c)))),
-    meta(r));
+// the rows of a table (a store imported from an Excel / CSV file) as a grid, as the console shows them: the row's number in
+// its sheet, the table's columns, the matches marked in each cell (cell_highlights: column -> [start, end) ranges in that
+// cell's value), the score last with its «R»
+function tableGrid(results, columns) {
+  const cols = columns?.length ? columns : [...new Set(results.flatMap((r) => Object.keys(r.cells || {})))];
+  const first = results[0]?.metadata || {};
+  const cap = [first.file, first.sheet].filter(Boolean).join(" · ");
+  return h("li", { class: "tablewrap" }, cap ? h("div", { class: "tablecap" }, cap) : null,
+    h("table", { class: "grid" },
+      h("thead", {}, h("tr", {}, h("th", { class: "rowno" }, "#"), cols.map((c) => h("th", {}, c)),
+        h("th", { class: "num", title: "The record's own match score: lower is closer" }, "Score"))),
+      h("tbody", {}, results.map((r) => h("tr", {},
+        h("td", { class: "rowno" }, String(r.metadata?.row ?? r.id)),
+        cols.map((c) => {
+          const v = String(r.cells?.[c] ?? "");
+          // one word of a few characters (a code, a number, a date) on one line; a long text with some width
+          const kind = !/\s/.test(v) && v.length <= 24 ? "one" : v.length > 40 ? "long" : null;
+          return h("td", { class: kind }, marked(v, r.cell_highlights?.[c], r.fuzzy, r.letter_match));
+        }),
+        h("td", { class: "num", title: r.letter_match ? "Letter match" : null },
+          r.reranked ? h("span", { class: "r", title: "Reranked: the ranking step put this record above one that matched more closely" }, "R") : null,
+          Number(r.match_score ?? r.score).toFixed(3)))))));
 }
 
 function render(data) {
   const results = data.results || [];
   info.textContent = `${results.length} result${results.length === 1 ? "" : "s"}` + (data.took_ms != null ? ` · ${data.took_ms} ms` : "");
-  list.replaceChildren(...results.map((r) => {
-    if (r.cells) return rowItem(r, data.columns);
+  if (results.some((r) => r.cells)) list.replaceChildren(tableGrid(results, data.columns));
+  else list.replaceChildren(...results.map((r) => {
     const title = r.title ? marked(r.title, r.title_highlights, r.fuzzy, r.letter_match) : (r.id || "");
     // the snippet (about 240 characters around the best match) with its own ranges: the whole text is not needed
     const snippet = r.snippet ? marked(r.snippet, r.snippet_highlights, r.fuzzy, r.letter_match) : null;
