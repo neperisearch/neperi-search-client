@@ -293,7 +293,8 @@ async function run() {
     info.textContent = "Type a few words to search.";
     return;
   }
-  const body = { collection: state.collection, query, top_k: state.top, ...(state.category ? { category: state.category } : {}),
+  // a search box: keywords mode -- every word typed is searched, the first letters of a word are enough («no ri 30»)
+  const body = { collection: state.collection, query, top_k: state.top, mode: "keywords", ...(state.category ? { category: state.category } : {}),
     ...(state.tags.length ? { tags: state.tags } : {}), ...(Object.keys(state.fields).length ? { fields: state.fields } : {}) };
   try {
     const r = await fetch("/api/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

@@ -31,6 +31,9 @@ its help articles (`demo_support`) — the page searches those until you name yo
 
 ## What the page does
 
+- **Keywords mode** (`"mode": "keywords"`): every word typed is searched, the first letters of a word are enough (`no ri 30`
+  finds `Norvik Ridge 30 L`); a question or a sentence would use the default `natural` mode, which leaves out the words
+  every text has (`the`, `of`, `how`…).
 - **Search as you type**, with the matches marked: teal the keyword itself, amber a similar word the search chose (a
   typo, a missing letter, a longer word that starts with it), violet only the typed letters close together inside another
   word. **R** beside the score: the ranking step put that result above one that matched more closely.
@@ -57,7 +60,7 @@ browser (public/)  --/api/...-->  server.mjs  --Bearer key-->  Neperi API
 - **The key stays on the server.** A key in a web page can be read by anyone and spent by anyone; the API also does not take
   calls from browsers on other sites. `server.mjs` forwards only what the page needs, only for the stores you list:
   - `POST /api/search` → `POST /v1/neperi/collections/{name}/search` with `{"query", "top_k", "category", "tags",
-    "fields"}` (a short query, at most 20 results);
+    "fields", "mode"}` (a short query, at most 20 results; the page sends `"mode": "keywords"`);
   - `GET /api/facets?collection=&category=` → `GET /v1/neperi/categories?collection=`, `GET
     /v1/neperi/fields?values=1&collection=&category=` and `GET /v1/neperi/collections/{name}/tags?category=`, kept
     `FACETS_TTL` seconds.

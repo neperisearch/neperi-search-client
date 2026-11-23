@@ -13,7 +13,7 @@
 // What the page may ask (nothing else goes through with the key):
 //   GET  /api/config                          the stores it may search
 //   GET  /api/facets?collection=&category=    a store's categories, its filter fields and its tags, with their counts
-//   POST /api/search                          {collection, query, category?, tags?, fields?, top_k?}
+//   POST /api/search                          {collection, query, category?, tags?, fields?, top_k?, mode?}
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
@@ -105,6 +105,9 @@ async function search(req, res) {
   const query = String(b.query || "").trim().slice(0, MAX_QUERY);
   if (!query) return send(res, 200, { results: [] });
   const body = { query, top_k: Math.max(1, Math.min(MAX_RESULTS, Number(b.top_k) || 10)) };
+  // how the box is read: "keywords" (every word typed is searched, the first letters of a word are enough) or "natural"
+  // (a sentence: its common words left out -- the API's default)
+  if (b.mode === "keywords" || b.mode === "natural") body.mode = b.mode;
   if (typeof b.category === "string" && b.category.trim()) body.category = b.category.trim().slice(0, 100);
   if (Array.isArray(b.tags)) {
     const tags = b.tags.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, 64)).slice(0, MAX_TAGS);
