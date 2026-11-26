@@ -1,30 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="auto">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Neperi Search sample</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='6.5' cy='6.5' r='4.5' fill='none' stroke='%232b5cc8' stroke-width='2'/%3E%3Cpath d='M10 10l4.5 4.5' stroke='%232b5cc8' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <h1>Search</h1>
-    <form id="search" role="search" autocomplete="off">
-      <select id="store" aria-label="Data store"></select>
-      <input id="query" type="search" placeholder="Type a few letters, a typo, a word without accents…" aria-label="Search">
-    </form>
-    <!-- the filters of the store: its categories, then the filter fields of the category picked (all of them under All) -->
-    <div id="filters" class="filters" aria-label="Filters"></div>
-    <!-- the conditions in use: the tags picked on the results and the fields set, each with its x -->
-    <div id="chips" class="chips"></div>
-    <p class="legend">
-      <mark class="exact" title="The word as typed (case and accents aside)">Exact keyword</mark>
-      <mark class="similar" title="A word close to the one typed, chosen by the search: a typo, a missing letter, a longer word that starts with it">Similar word</mark>
-      <mark class="letters" title="The typed letters close together and in order, inside another word">Letter match</mark>
-    </p>
-    <p id="info" class="info"></p>
-    <ol id="results" class="results"></ol>
-  </main>
+  <div class="layout">
+    <!-- the pages, as the Neperi console has them: the data stores, and their records searched with filters -->
+    <aside class="side">
+      <div class="brand">Neperi <small>Search sample</small></div>
+      <div class="nav-group">Neperi Search</div>
+      <nav class="nav" aria-label="Pages">
+        <a href="#/stores" data-page="stores"><span class="ico">▤</span>Data stores</a>
+        <a href="#/records" data-page="records"><span class="ico">⌕</span>Records</a>
+      </nav>
+    </aside>
+    <main class="main">
+      <div class="topbar">
+        <h1 id="title">Neperi Search</h1>
+        <div class="who"><span id="mode"></span><button type="button" id="theme" title="Theme">◐ System</button></div>
+      </div>
+      <section id="page" class="card"></section>
+    </main>
+  </div>
+  <div id="toasts" aria-live="polite"></div>
   <script type="module" src="app.js"></script>
 </body>
 </html>
