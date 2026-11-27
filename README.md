@@ -4,6 +4,8 @@ A zero-dependency web search UI and lightweight data manager for **[Neperi Searc
 
 **[Website](https://neperi.com)** · **[API Reference](https://neperi.com/docs.html)** · **[Get Free API Key](https://app.neperi.com/app#signup)** · **[For AI Agents (`llms.txt`)](https://neperi.com/llms.txt)**
 
+![Neperi Search live demo — instant search-as-you-type with match highlights](docs/demo.gif)
+
 ---
 
 ## Quick Start
