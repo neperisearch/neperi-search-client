@@ -700,8 +700,17 @@ function timeControl() {
 const scoreValue = (it) => it.match_score ?? it.score;
 const rerankMark = (it) => (it.reranked ? h("span", { class: "nw-rr",
   title: "Reranked: the ranking step put this record above one that matched more closely" }, "R") : null);
+// how much of the query the record holds -- `quality` 0..1, by how rare each word is, comparable between queries:
+// 0.7 and up a full match, 0.3 to 0.7 a partial one, under 0.3 a weak one (show those apart, or drop them)
+const QBAND = [[0.7, "ok", "Full match"], [0.3, "part", "Partial match"], [-1, "weak", "Weak match"]];
+const qualityOf = (it) => {
+  if (it.quality == null) return null;
+  const [, cls, label] = QBAND.find(([lo]) => it.quality >= lo);
+  return h("span", { class: `nw-q ${cls}`,
+    title: `Match ${Number(it.quality).toFixed(2)}: how much of the query the record holds, by how rare its words are (0–1)` }, label);
+};
 const scoreOf = (it) => (scoreValue(it) != null ? [h("span", { class: "nw-score", title: "Match score (lower = closer)" },
-  scoreText(scoreValue(it))), rerankMark(it)] : null);
+  scoreText(scoreValue(it))), rerankMark(it), qualityOf(it)] : null);
 const weakOf = (it) => (it.letter_match ? `Letter match of «${s.query}»: the letters typed close together, in order` : null);
 const onOpen = (fn) => ({ tabindex: "0", onclick: fn, onkeydown: (ev) => { if (ev.key === "Enter") fn(); } });
 
@@ -787,7 +796,9 @@ function tableGrid(items) {
           const kind = !/\s/.test(v) && v.length <= 24 ? "one" : v.length > 40 ? "long" : null;
           return h("td", { class: kind }, marked(v, it.cell_highlights?.[c], it.fuzzy, weakOf(it)));
         }),
-        res.search ? h("td", { class: "nw-num" }, scoreValue(it) != null ? [rerankMark(it), scoreText(scoreValue(it))] : "") : null)))));
+        res.search ? h("td", { class: "nw-num" }, scoreValue(it) != null
+          ? [rerankMark(it), scoreText(scoreValue(it)), it.quality != null ? h("div", { class: "nw-qcell" }, qualityOf(it)) : null] : "")
+          : null)))));
 }
 
 function drawList() {
