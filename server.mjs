@@ -17,9 +17,13 @@
 //   FACETS_TTL          seconds the server keeps a store's categories, filter fields and tags before it asks again
 //                       (default 60; a write through this page asks again at once). Reads count tokens and requests
 //                       a minute, as searches do
+//   NEPERI_WEBHOOK_SECRET  the `secret` of a webhook pointed at this server's /hooks/neperi (README: «Changes made in
+//                       Neperi»): every change made in Neperi -- the console, an AI agent, an import -- is then checked
+//                       and logged here, where your own database would follow it
 //
 // The page calls /api/<the API's own path> -- /api/v1/neperi/collections/handbook/search -> {NEPERI_URL}/v1/neperi/...
 // -- and only the calls of ROUTES below go through: in the stores the page may use, writing only with NEPERI_WRITE=1.
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
@@ -34,6 +38,7 @@ const ANY = STORES.includes("*");
 const PORT = Number(process.env.PORT || 8080);
 const HOST = process.env.HOST || (WRITE ? "127.0.0.1" : "");
 const FACETS_TTL = 1000 * Number(process.env.FACETS_TTL ?? 60);
+const HOOK_SECRET = process.env.NEPERI_WEBHOOK_SECRET || "";
 const ROOT = fileURLToPath(new URL("./public/", import.meta.url));
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml" };
@@ -116,6 +121,10 @@ const ROUTES = [
   ["GET", at(`/collections/${S}/tags`), "read", { store: true, cache: true }],
   ["PUT", at(`/collections/${S}/categories`), "write", { store: true }],
   ["GET", at(`/collections/${S}/fields/suggest`), "admin", { store: true }],
+  ["GET", at(`/collections/${S}/domains`), "read", { store: true, cache: true }],
+  ["PUT", at(`/collections/${S}/domains`), "admin", { store: true }],
+  ["GET", at(`/collections/${S}/sort`), "read", { store: true, cache: true }],
+  ["PUT", at(`/collections/${S}/sort`), "admin", { store: true }],
   ["GET", at("/categories"), "read", { query: true, cache: true }],
   // the fields of one store; without ?collection= the account's fields, which only the setup of filter fields reads
   ["GET", at("/fields"), "read", { query: true, cache: true, bare: "admin" }],
@@ -127,6 +136,12 @@ const ROUTES = [
   ["POST", at("/ops/([A-Za-z0-9_-]+)/stop"), "write", {}],
 ];
 const allowed = (name) => ANY || STORES.includes(name);
+// the domains a visitor's request turns on -- an object of names, the "on" ones kept
+const onlyOn = (d) => {
+  if (!d || typeof d !== "object" || Array.isArray(d)) return undefined;
+  const on = Object.fromEntries(Object.entries(d).filter(([, v]) => v === "on" || v === true).slice(0, 20).map(([k]) => [String(k).slice(0, 60), "on"]));
+  return Object.keys(on).length ? on : undefined;
+};
 const mayDo = (need) => need === "read" || (need === "write" && can.write) || (need === "admin" && can.admin);
 const NOT_HERE = `This page may use ${ANY ? "the account's data stores" : STORES.join(", ")}.`;
 
@@ -174,13 +189,21 @@ async function forward(req, res, url) {
         }
       }
       if (o.search && !can.write) {          // a visitor: a short query, a page of results, the search's own fields only
-        const { query, top_k, category, tags, fields, columns, created_from, created_to, updated_from, updated_to } = b;
+        const { query, top_k, category, tags, fields, columns, created_from, created_to, updated_from, updated_to, domains } = b;
         b = { query: String(query || "").slice(0, PUBLIC.query), top_k: Math.max(1, Math.min(PUBLIC.results, Number(top_k) || 10)),
-          category, tags, fields, columns, created_from, created_to, updated_from, updated_to };
+          category, tags, fields, columns, created_from, created_to, updated_from, updated_to, domains: onlyOn(domains) };
       }
       if (o.get && !can.write && Array.isArray(b.ids)) b.ids = b.ids.slice(0, PUBLIC.list);
       body = JSON.stringify(b);
     }
+  }
+  // a visitor turns a domain on (a box «Show on UI» offers), never one off: what is always applied stays applied
+  if (!can.write && url.searchParams.has("domains")) {
+    let d = null;
+    try { d = JSON.parse(url.searchParams.get("domains")); } catch { /* none */ }
+    const on = onlyOn(d);
+    if (on) url.searchParams.set("domains", JSON.stringify(on));
+    else url.searchParams.delete("domains");
   }
   if (o.items && !can.write) {
     const n = Number(url.searchParams.get("limit") || 50);
@@ -205,6 +228,39 @@ async function forward(req, res, url) {
   send(res, r.status, text, r.headers.get("content-type") || "application/json; charset=utf-8");
 }
 
+// -- changes made in Neperi, as webhooks ------------------------------------------------------------------------------
+// A webhook of the account (POST /v1/webhooks with {"url": "https://<this server>/hooks/neperi", "events":
+// ["neperi.item.*"]}, or the console's Webhooks page) POSTs every change of an item here -- made in the console, by an AI
+// agent, by an import: the signature is checked, an event seen already is passed over (a delivery may come twice), and
+// the change is logged. hook() is where a backend writes it into its own database, by the item ids it keys its records
+// by; GET /v1/neperi/collections/{name}/changes?after=<cursor> gives what it missed (a restart).
+const seen = new Set();
+function signed(raw, header) {
+  const parts = Object.fromEntries(String(header || "").split(",").map((p) => p.split("=")));
+  const want = createHmac("sha256", HOOK_SECRET).update(`${parts.t}.`).update(raw).digest("hex");
+  return typeof parts.v1 === "string" && parts.v1.length === want.length
+    && timingSafeEqual(Buffer.from(parts.v1), Buffer.from(want)) && Math.abs(Date.now() / 1000 - Number(parts.t)) < 300;
+}
+async function hook(req, res) {
+  if (!HOOK_SECRET) return refuse(res, 404, "not_found", "Set NEPERI_WEBHOOK_SECRET to take webhooks here.");
+  const raw = await readBody(req, 1024 * 1024);
+  if (!signed(raw, req.headers["x-agentbed-signature"])) {
+    return refuse(res, 401, "bad_signature", "Not signed with this webhook's secret, or more than 5 minutes old.");
+  }
+  const evt = JSON.parse(raw.toString("utf8"));
+  send(res, 204, "");                    // answered first: Neperi waits 5 seconds at most, then tries again later
+  if (seen.has(evt.id)) return;
+  seen.add(evt.id);
+  if (seen.size > 5000) seen.delete(seen.values().next().value);
+  const d = evt.data || {};
+  const by = d.source ? [d.source.via, d.source.actor].filter(Boolean).join(" ") : evt.actor || "";
+  const ids = (d.changes || []).map((c) => `${c.id} (rev ${c.rev})`).join(", ");
+  console.log(`${evt.created_at} ${evt.event} ${d.collection ?? ""}: ${ids}${by ? ` -- by ${by}` : ""}`);
+  // your database here, change by change: created / updated -- the record of that id takes `d.items` (or what POST
+  // /v1/neperi/collections/<collection>/items/get gives when the event has none) if its rev is newer than yours;
+  // deleted -- the record goes
+}
+
 createServer(async (req, res) => {
   try {
     const url = new URL(req.url, "http://localhost");
@@ -212,6 +268,7 @@ createServer(async (req, res) => {
       return send(res, 200, { write: can.write, admin: can.admin, stores: ANY ? "*" : STORES });
     }
     if (url.pathname.startsWith("/api/v1/")) return await forward(req, res, url);
+    if (url.pathname === "/hooks/neperi" && req.method === "POST") return await hook(req, res);
     if (req.method !== "GET") return refuse(res, 405, "method_not_allowed", "Not allowed.");
     const path = normalize(join(ROOT, url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname)));
     if (!path.startsWith(ROOT.endsWith(sep) ? ROOT : ROOT + sep)) return send(res, 404, "Not found", "text/plain");
@@ -226,4 +283,5 @@ createServer(async (req, res) => {
   await whoami();
   const where = `http://${HOST && HOST !== "0.0.0.0" ? HOST : "localhost"}:${PORT}`;
   console.log(`Neperi Search sample: ${where}  (${can.write ? "writing" : "search only"}; stores: ${ANY ? "all" : STORES.join(", ")})`);
+  if (HOOK_SECRET) console.log(`Webhooks: POST ${where}/hooks/neperi (reach it over https: a tunnel while you try it)`);
 });

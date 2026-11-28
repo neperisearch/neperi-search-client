@@ -218,16 +218,37 @@ const go = (name) => { if (location.hash === `#/${name}`) route(); else location
 // Records
 // =====================================================================================================================
 // what is shown: the store, the words typed, its category, its filter fields {key: condition}, the days, the tags picked
-const s = { collection: null, query: "", category: null, fields: {}, dates: {}, tags: [], top: PAGE };
+const s = { collection: null, query: "", category: null, fields: {}, dates: {}, tags: [], domains: {}, order: null, top: PAGE };
 let res = null, seq = 0, timer = null;
 let storeFields = [], storeCats = [], catFields = null, tagCounts = new Map(), filtersSeq = 0;
+// the store's named domains (GET …/domains) and its records within the domains in force («All (N)»). A domain «always
+// applied» narrows every search and count without a box; a «Show on UI» one is a box (its conditions or All); an admin key
+// has every domain as a box. s.domains: what differs from that, {name: "on" | "off"}, sent with every search and count
+let storeDomains = [], storeTotal = null;
+// the store's sort options (GET …/sort): the Sort box offers those of the first domain picked that has some, else those of no
+// domain (none: no box); s.order -- the one picked (null: the best match while searching, else the default option)
+let storeOrders = [];
+const orderScope = () => {
+  for (const d of storeDomains) {
+    if (d.always || s.domains[d.name] !== "on") continue;
+    const mine = storeOrders.filter((o) => o.domain && o.domain.toLowerCase() === d.name.toLowerCase());
+    if (mine.length) return mine;
+  }
+  return storeOrders.filter((o) => !o.domain);
+};
+const orderNow = () => s.order ?? (s.query ? "score" : (orderScope().find((o) => o.default) || orderScope()[0])?.name ?? "");
+const domainOn = (d) => (s.domains[d.name] ?? (d.always ? "on" : "off")) === "on";
+const domainsShown = () => storeDomains.filter((d) => cfg.admin || d.show);
+const domainWant = () => (Object.keys(s.domains).length ? { domains: { ...s.domains } } : {});
+const domainQS = () => (Object.keys(s.domains).length ? `&domains=${enc(JSON.stringify(s.domains))}` : "");
 const picked = new Set();     // the records picked with their boxes (ids in the store picked)
 let R = null;                 // the elements of the Records page while it is shown
 const fieldsInView = () => (s.category && catFields ? catFields : storeFields);
 const fieldOn = (v) => v != null && (Array.isArray(v) ? v.length > 0 : typeof v === "object" ? v.from != null || v.to != null : true);
 const fieldFilters = () => Object.fromEntries(Object.entries(s.fields).filter(([, v]) => fieldOn(v)));
 const dateFilters = () => Object.fromEntries(Object.entries(s.dates).filter(([, v]) => v));
-const filtered = () => !!(s.category || Object.keys(fieldFilters()).length || Object.keys(dateFilters()).length || s.tags.length);
+const filtered = () => !!(s.category || Object.keys(fieldFilters()).length || Object.keys(dateFilters()).length || s.tags.length
+  || Object.values(s.domains).includes("on"));
 const maxTop = () => (cfg.write ? 100 : 50);   // a search page's server gives at most 50 results
 
 function recordsPage() {
@@ -236,12 +257,16 @@ function recordsPage() {
   const chips = h("div", { class: "nw-chips" });
   const input = h("input", { type: "search", placeholder: "Enter keywords to search the records…", autocomplete: "off", "aria-label": "Search" });
   input.value = s.query;
+  const setupBtn = h("button", { hidden: true, onclick: () => s.collection && setupDialog(s.collection) }, "⚙ Store setup");
   const allBox = cfg.write ? h("input", { type: "checkbox", disabled: true }) : null;
   const selInfo = h("span", { class: "nw-selinfo" });
   const bulkBtn = cfg.write ? h("button", { class: "small", disabled: true, onclick: () => bulkDialog() }, "Bulk action") : null;
   const builder = h("div", { class: "nw-qb" });
+  sortSel = h("select", { "aria-label": "Sort" });
+  sortSel.addEventListener("change", () => changed({ order: sortSel.value }, true));
+  const sortBar = h("div", { class: "nw-sortbar", hidden: true }, h("span", { class: "nw-ql" }, "Sort"), sortSel);
   const list = h("div", { class: "nw-results" });
-  R = { info, chips, input, allBox, selInfo, bulkBtn, builder, list };
+  R = { info, chips, input, setupBtn, allBox, selInfo, bulkBtn, builder, sortBar, list };
   allBox?.addEventListener("change", () => {
     if (allBox.checked) for (const it of res?.items || []) { if (picked.size < MAX_PICK) picked.add(it.id); }
     else picked.clear();
@@ -249,23 +274,24 @@ function recordsPage() {
   });
   fill(page,
     h("h2", {}, "Records"),
-    // row 1: create, import, how many or how fast, the conditions in use as chips
+    // row 1: create, import, store setup, how many or how fast, the conditions in use as chips
     h("div", { class: "nw-top" },
       cfg.write ? h("button", { class: "primary", onclick: () => newRecord() }, "+ New") : null,
-      cfg.write ? h("button", { onclick: () => importDialog() }, "Import Excel / CSV") : null, info, chips),
+      cfg.write ? h("button", { onclick: () => importDialog() }, "Import Excel / CSV") : null,
+      setupBtn, info, chips),
     // row 2, on the right: the records picked and what acts on them
     cfg.write ? h("div", { class: "nw-tools" }, h("span", { class: "nw-selbar" },
       h("label", { class: "nw-selall", title: "Select every record shown" }, allBox, "Select all"), selInfo), bulkBtn) : null,
     h("div", { class: "nw-search" }, h("span", { class: "ico" }, "⌕"), input,
       h("button", { type: "button", class: "clear", title: "Clear the search",
-        onclick: () => { input.value = ""; changed({ query: "" }, true); input.focus(); } }, "×")),
-    builder, list);
+        onclick: () => { input.value = ""; changed({ query: "", order: null }, true); input.focus(); } }, "×")),
+    builder, sortBar, list);
   input.addEventListener("input", () => {
     clearTimeout(timer);
-    timer = setTimeout(() => changed({ query: input.value.trim() }, true), 250);
+    timer = setTimeout(() => changed({ query: input.value.trim(), order: null }, true), 250);   // each search: the best match first
   });
   input.addEventListener("keydown", (ev) => {
-    if (ev.key === "Enter") { clearTimeout(timer); changed({ query: input.value.trim() }, true); }
+    if (ev.key === "Enter") { clearTimeout(timer); changed({ query: input.value.trim(), order: null }, true); }
   });
   // a click into the box selects its words (typing starts another search); a click while the caret is in it places it
   let hadFocus = false;
@@ -289,28 +315,36 @@ function changed(patch, keep = false) {
 // days stay: every store has them). One is always picked: the one asked for, else the last one, else the first
 async function pickStore(name, keep = {}) {
   name = [name, recall(STORE_KEY)].find((n) => n && storeOf(n)) || stores[0]?.name || null;
-  Object.assign(s, { collection: name, category: keep.category || null, fields: {}, tags: keep.tags || [] });
+  Object.assign(s, { collection: name, category: keep.category || null, fields: {}, tags: keep.tags || [], domains: {}, order: null });
   if (name) remember(STORE_KEY, name);
   storeFields = [];
   storeCats = [];
+  storeDomains = [];
+  storeTotal = null;
+  storeOrders = [];
   catFields = null;
   tagCounts = new Map();
   changed({});
   if (name) await loadStoreFilters(name);
 }
-const catFieldsOf = (name, cat) => api("GET", `/v1/neperi/fields?values=1&collection=${enc(name)}&category=${enc(cat)}`)
+const catFieldsOf = (name, cat) => api("GET", `/v1/neperi/fields?values=1&collection=${enc(name)}&category=${enc(cat)}${domainQS()}`)
   .then((r) => r.fields || []).catch(() => null);
-const tagCountsOf = (name, cat) => api("GET", `/v1/neperi/collections/${enc(name)}/tags?limit=300${cat ? `&category=${enc(cat)}` : ""}`)
+const tagCountsOf = (name, cat) => api("GET", `/v1/neperi/collections/${enc(name)}/tags?limit=300${cat ? `&category=${enc(cat)}` : ""}${domainQS()}`)
   .then((r) => new Map((r.tags || []).map((x) => [x.tag, x.count]))).catch(() => null);
 async function loadStoreFilters(name) {
   const my = ++filtersSeq;
-  const [fr, cr, cf, tc] = await Promise.all([
-    api("GET", `/v1/neperi/fields?values=1&collection=${enc(name)}`).catch(() => ({ fields: [] })),
-    isTable(name) ? { categories: [] } : api("GET", `/v1/neperi/categories?collection=${enc(name)}`).catch(() => ({ categories: [] })),
-    s.category ? catFieldsOf(name, s.category) : null, tagCountsOf(name, s.category)]);
+  const [fr, cr, cf, tc, dr, sr] = await Promise.all([
+    api("GET", `/v1/neperi/fields?values=1&collection=${enc(name)}${domainQS()}`).catch(() => ({ fields: [] })),
+    isTable(name) ? { categories: [] } : api("GET", `/v1/neperi/categories?collection=${enc(name)}${domainQS()}`).catch(() => ({ categories: [] })),
+    s.category ? catFieldsOf(name, s.category) : null, tagCountsOf(name, s.category),
+    api("GET", `/v1/neperi/collections/${enc(name)}/domains`).catch(() => ({ domains: [] })),
+    api("GET", `/v1/neperi/collections/${enc(name)}/sort`).catch(() => ({ sort: [] }))]);
   if (my !== filtersSeq || s.collection !== name) return;     // another store picked meanwhile
   storeFields = fr.fields || [];
   storeCats = cr.categories || [];
+  storeTotal = cr.total ?? null;
+  storeDomains = dr.domains || [];
+  storeOrders = sr.sort || [];
   catFields = cf;
   tagCounts = tc || new Map();
   if (R) { drawBuilder(); drawChips(); }
@@ -336,6 +370,7 @@ async function pickCategory(cat) {
         if (kept.length) fields[k] = kept;
         else delete fields[k];
       }
+      if (fd.type === "status" && !(fd.values || []).some((x) => x.value === v)) delete fields[k];
     }
   }
   changed({ category: cat, fields, tags });
@@ -354,22 +389,27 @@ async function load(more = false) {
     let next;
     if (s.query) {
       const body = { query: s.query, top_k: s.top, ...(s.category ? { category: s.category } : {}), ...dateFilters(),
-        ...(Object.keys(fieldFilters()).length ? { fields: fieldFilters() } : {}), ...(s.tags.length ? { tags: s.tags } : {}) };
+        ...(Object.keys(fieldFilters()).length ? { fields: fieldFilters() } : {}), ...(s.tags.length ? { tags: s.tags } : {}),
+        ...domainWant(), ...(s.order && s.order !== "score" ? { order: s.order } : {}) };
       const d = await api("POST", `/v1/neperi/collections/${enc(name)}/search`, body);
       const items = d.results || [];
       next = { items, total: d.total, took_ms: d.took_ms, columns: d.columns, search: true, more: items.length >= s.top && s.top < maxTop() };
     } else if (filtered()) {
       next = { items: [], total: 0, wait: true };
     } else {
-      const after = more && res?.next_after ? `&after=${enc(res.next_after)}` : "";
-      const d = await api("GET", `/v1/neperi/collections/${enc(name)}/items?limit=${PAGE}${after}`);
+      // in the sort option picked (else the default one) a page at an offset; no option: by id, after the last one
+      const ord = orderScope().length ? orderNow() : "";
+      const page = ord ? `&order=${enc(ord)}${more && res?.next_offset ? `&offset=${res.next_offset}` : ""}`
+        : more && res?.next_after ? `&after=${enc(res.next_after)}` : "";
+      const d = await api("GET", `/v1/neperi/collections/${enc(name)}/items?limit=${PAGE}${page}`);
       let items = d.items || [];
       if (isTable(name) && items.length) {
         const g = await api("POST", `/v1/neperi/collections/${enc(name)}/items/get`, { ids: items.map((x) => x.id) });
         const byId = new Map((g.items || []).map((x) => [x.id, x]));
         items = items.map((x) => ({ ...x, cells: byId.get(x.id)?.cells || {} }));
       }
-      next = { items: more && res?.items ? res.items.concat(items) : items, total: d.total, next_after: d.next_after, more: !!d.next_after };
+      next = { items: more && res?.items ? res.items.concat(items) : items, total: d.total, next_after: d.next_after,
+        next_offset: d.next_offset, more: !!(d.next_after || d.next_offset) };
     }
     if (my !== seq) return;          // a newer view is on its way
     res = next;
@@ -406,6 +446,7 @@ function draw() {
   R.info.textContent = res.search ? `Searched in ${num(res.took_ms)} ms` : res.wait || res.error ? "" : plural(res.total || 0, "record", "records");
   drawChips();
   drawSel();
+  fillSort();
   drawList();
 }
 
@@ -413,7 +454,7 @@ function draw() {
 const dayText = (a, b) => (a && b ? `${a} – ${b}` : a ? `≥ ${a}` : `≤ ${b}`);
 const rangeText = (v) => (v.from != null && v.to != null ? `${num(v.from)} – ${num(v.to)}` : v.from != null ? `≥ ${num(v.from)}` : `≤ ${num(v.to)}`);
 const valueText = (fd, v) => (fd.type === "number" ? rangeText(v) : fd.type === "date" ? dayText(v.from, v.to)
-  : fd.type === "bool" ? (v ? "Yes" : "No") : v.join(", "));
+  : fd.type === "bool" ? (v ? "Yes" : "No") : Array.isArray(v) ? v.join(", ") : String(v));
 function drawChips() {
   if (!R) return;
   const chip = (label, off) => h("span", { class: "nw-chip", title: label }, label,
@@ -471,9 +512,10 @@ function drawBuilder() {
   store.value = s.collection || "";
   store.addEventListener("change", () => pickStore(store.value));
   parts.push(q("Data store", store));
+  if (s.collection) for (const d of domainsShown()) parts.push(domainControl(d));
   // the store's own categories, each with how many records have it (a table has none: its columns filter it)
   if (s.collection && !isTable(s.collection) && (storeCats.length || s.category)) {
-    const total = storeOf(s.collection)?.items;
+    const total = storeTotal ?? storeOf(s.collection)?.items;
     const cat = h("select", {}, h("option", { value: "" }, total != null ? `All (${countOf(total)})` : "All"),
       storeCats.map((c) => h("option", { value: c.value }, `${c.value} (${countOf(c.count)})`)));
     if (s.category && !storeCats.some((c) => c.value === s.category)) cat.append(h("option", { value: s.category }, s.category));
@@ -483,20 +525,72 @@ function drawBuilder() {
     parts.push(q("Category", cat));
   }
   if (s.collection) for (const fd of fieldsInView()) parts.push(fieldControl(fd));
-  parts.push(timeControl());
+  // no common Time box: the record's own days are attributes (Created / Changed), shown when the store declares them
   const table = isTable(s.collection);
-  if (s.collection && (cfg.admin || (cfg.write && !table))) {
-    parts.push(h("button", { class: "small", onclick: () => setupDialog(s.collection) },
-      table ? "⚙ Filter fields" : cfg.admin ? "⚙ Categories & filter fields" : "⚙ Categories"));
+  const canSetup = Boolean(s.collection && (cfg.admin || (cfg.write && !table)));
+  if (R.setupBtn) {
+    R.setupBtn.hidden = !canSetup;
+    if (canSetup) R.setupBtn.textContent = cfg.admin ? "⚙ Store setup" : "⚙ Categories";
   }
   R.builder.replaceChildren(...parts);
+  fillSort();
+}
+
+// the Sort bar below the filters, aligned right: the options offered, «Best match» first while searching
+let sortSel = null;
+function fillSort() {
+  if (!sortSel || !R?.sortBar) return;
+  const opts = orderScope();
+  R.sortBar.hidden = !s.collection || !opts.length;
+  if (R.sortBar.hidden) return;
+  sortSel.replaceChildren(...(s.query ? [h("option", { value: "score" }, "Best match")] : []), ...opts.map((o) => h("option", { value: o.name }, o.name)));
+  sortSel.value = orderNow();
+  sortSel.classList.toggle("on", !!s.order && s.order !== "score");
 }
 
 // one filter field: yes / no a list of three, a number or a date two boxes (from, to), a list of values a button that
 // opens them with a box each (any of the values ticked) and how many records have it
+// a domain's conditions in words («Category: A, B · Stage: Published»): its box in the builder, its conditions or All
+const domainText = (d) => {
+  const w = d.where || {}, parts = [];
+  if (w.category) parts.push(`Category: ${[].concat(w.category).join(", ")}`);
+  for (const [k, v] of Object.entries(w.fields || {})) {
+    const fd = storeFields.find((x) => x.key === k) || { key: k, label: k, type: "list" };
+    parts.push(`${fd.label}: ${valueText(fd, v)}`);
+  }
+  return parts.join(" · ") || d.name;
+};
+function domainControl(d) {
+  const on = domainOn(d);
+  const sel = h("select", { title: domainText(d) }, h("option", { value: "on" }, domainText(d)), h("option", { value: "off" }, "All"));
+  sel.value = on ? "on" : "off";
+  sel.classList.toggle("on", on);
+  sel.addEventListener("change", async () => {
+    const next = { ...s.domains };
+    if (sel.value === (d.always ? "on" : "off")) delete next[d.name];
+    else next[d.name] = sel.value;
+    s.domains = next;
+    s.order = null;   // the domain's own sort options, its default
+    changed({});
+    await loadStoreFilters(s.collection);   // the counts within the domains in force
+  });
+  return q(d.name, sel);
+}
+
 function fieldControl(fd) {
   const cur = s.fields[fd.key];
   const set = (v, keep = false) => changed({ fields: { ...s.fields, [fd.key]: v } }, keep);
+  if (fd.type === "status") {   // one of its options, in their order, each with how many records have it
+    const counts = new Map((fd.values || []).map((x) => [x.value, x.count]));
+    const sel = h("select", {}, h("option", { value: "" }, "All"),
+      (fd.choices || []).map((c) => h("option", { value: c }, counts.has(c) ? `${c} (${countOf(counts.get(c))})` : c)));
+    const v = Array.isArray(cur) ? cur[0] : cur;
+    if (v && !(fd.choices || []).includes(v)) sel.append(h("option", { value: v }, v));
+    sel.value = v || "";
+    sel.classList.toggle("on", !!v);
+    sel.addEventListener("change", () => set(sel.value || null));
+    return q(fd.label, sel);
+  }
   if (fd.type === "bool") {
     const sel = h("select", {}, [["", "All"], ["1", "Yes"], ["0", "No"]].map(([v, l]) => h("option", { value: v }, l)));
     sel.value = cur === true ? "1" : cur === false ? "0" : "";
@@ -737,7 +831,7 @@ async function preview(it) {
   }
   const lm = weakOf(it);
   const meta = item.metadata || {};
-  const shown = storeFields.filter((fd) => !fd.column && meta[fd.key] != null && meta[fd.key] !== "");
+  const shown = storeFields.filter((fd) => !fd.column && !fd.builtin && meta[fd.key] != null && meta[fd.key] !== "");
   const fieldsBox = shown.length ? h("div", { class: "nw-cells nw-pfields" }, shown.map((fd) => {
     const v = meta[fd.key];
     return [h("span", { class: "k", title: fd.label }, fd.label), h("span", { class: "v" },
@@ -800,6 +894,16 @@ function tagInput(initial, suggest = []) {
 // a filter field's box in a record's form (the value goes in the record's metadata, under the field's key)
 const asText = (v) => (Array.isArray(v) ? v.join("; ") : v == null || typeof v === "object" ? "" : String(v));
 function metaInput(d, value, onChange) {
+  if (d.type === "status") {   // one of its options (case aside: shown as declared)
+    const cur = Array.isArray(value) ? value[0] : value;
+    const opts = d.choices || [];
+    const hit = cur == null || cur === "" ? null : opts.find((c) => fold(String(c)) === fold(String(cur)));
+    const sel = h("select", {}, h("option", { value: "" }, "—"), opts.map((c) => h("option", { value: c }, c)));
+    if (cur != null && cur !== "" && hit == null) sel.append(h("option", { value: String(cur) }, String(cur)));
+    sel.value = hit ?? (cur == null ? "" : String(cur));
+    sel.addEventListener("change", () => onChange(sel.value || null));
+    return sel;
+  }
   if (d.type === "date") {
     const inp = h("input", { type: "date", value: dayOf(value) });
     inp.addEventListener("change", () => onChange(inp.value || null));
@@ -852,7 +956,7 @@ async function recordForm(item) {
     const [cats, fds, tg] = await Promise.all([catsOf(name), fieldsOf(name), tagsOf(name)]);
     if (storeSel.value !== name) return;
     fill(catWrap, offering(category, cats));
-    defs = fds.filter((d) => !d.column);
+    defs = fds.filter((d) => !d.column && !d.builtin);
     fwrap.replaceChildren(...defs.map((d) => {
       if (!(d.key in typed)) typed[d.key] = meta[d.key] ?? null;
       return field(d.label, metaInput(d, typed[d.key], (v) => { typed[d.key] = v; }));
@@ -1045,25 +1149,41 @@ function importDialog() {
 }
 const go2records = () => { if (location.hash !== "#/records") location.hash = "#/records"; else if (R) changed({}); };
 
-// -- ⚙ Categories & filter fields of a data store ------------------------------------------------------------------
+// -- ⚙ Store setup of a data store ----------------------------------------------------------------------------------
 // Categories (a store of text): declared ahead so the forms offer them before a record has one; one renamed or taken off
-// goes so on its records too (asked first). Filter fields (admin keys -- they are the account's): a table's columns or the
-// metadata keys of the records, each on or off, its label and type
-const FIELD_TYPES = [["list", "List"], ["number", "Number (from – to)"], ["bool", "Yes / No"], ["date", "Date (from – to)"]];
+// goes so on its records too (asked first). Attributes -- the filter fields (admin keys: they are the account's): a table's
+// columns or the metadata keys of the records, each on or off, its label and type (a status: its options). Domains (admin
+// keys): named sets of conditions on the category and the fields, all of them holding
+const FIELD_TYPES = [["list", "List"], ["status", "Status (one of)"], ["number", "Number (from – to)"], ["bool", "Yes / No"],
+  ["date", "Date (from – to)"]];
+// the record's own days, offered as attributes: a date, read from the record (not its metadata)
+const BUILTIN_DATES = [["created_at", "Created"], ["updated_at", "Changed"]];
+const BUILTIN_KEYS = new Set(BUILTIN_DATES.map(([k]) => k));
 async function setupDialog(name, tab = null) {
   const table = isTable(name), withCats = !table && cfg.write, withFields = cfg.admin;
   if (!withCats && !withFields) return;
-  let sug, cats;
+  let sug, cats, doms, defs, sorts;
   try {
-    [sug, cats] = await Promise.all([withFields ? api("GET", `/v1/neperi/collections/${enc(name)}/fields/suggest`) : null,
-      withCats ? api("GET", `/v1/neperi/categories?collection=${enc(name)}`).then((r) => r.categories || []) : []]);
+    [sug, cats, doms, defs, sorts] = await Promise.all([withFields ? api("GET", `/v1/neperi/collections/${enc(name)}/fields/suggest`) : null,
+      withCats ? api("GET", `/v1/neperi/categories?collection=${enc(name)}`).then((r) => r.categories || []) : [],
+      withFields ? api("GET", `/v1/neperi/collections/${enc(name)}/domains`).then((r) => r.domains || []) : [],
+      withFields ? api("GET", `/v1/neperi/fields?values=1&collection=${enc(name)}`).then((r) => r.fields || []) : [],
+      withFields ? api("GET", `/v1/neperi/collections/${enc(name)}/sort`).then((r) => r.sort || []) : []]);
   } catch (e) {
     errToast(e);
     return;
   }
+  const fdOf = new Map(defs.map((d) => [d.key, d]));
   const crows = cats.map((c) => ({ from: c.value, name: c.value, count: c.count || 0, gone: false }));
-  const frows = withFields ? sug.suggestions.map((x) => ({ ...x, on: x.field, was: x.field, type: x.type === "text" ? "list" : x.type })) : [];
-  const start = JSON.stringify([crows, frows]);
+  const frows = withFields ? sug.suggestions.map((x) => ({ ...x, on: x.field, was: x.field, type: x.type === "text" ? "list" : x.type,
+    options: x.type === "status" ? [...(fdOf.get(x.key)?.choices || [])] : [] })) : [];
+  // the record's own days: two rows suggested, ticked when the store has them
+  if (withFields) {
+    for (const [k, l] of BUILTIN_DATES) {
+      if (!frows.some((r) => r.key === k)) frows.push({ key: k, label: l, column: null, type: "date", on: false, was: false, values: [], options: [] });
+    }
+  }
+  let start = "";
   const err = h("div", { class: "nw-err" });
   // categories: a row each (its name, how many records, ×), + Add
   const catList = h("div", { class: "nw-cats" });
@@ -1086,20 +1206,185 @@ async function setupDialog(name, tab = null) {
     h("div", { class: "nw-fields" }, frows.length ? frows.map((r) => {
       const on = h("input", { type: "checkbox", checked: r.on, title: "Filter by it" });
       const label = h("input", { type: "text", value: r.label, maxLength: 60 });
-      const type = h("select", {}, FIELD_TYPES.map(([v, l]) => h("option", { value: v }, l)));
+      const type = h("select", { disabled: BUILTIN_KEYS.has(r.key) }, FIELD_TYPES.map(([v, l]) => h("option", { value: v }, l)));
       type.value = r.type;
+      // a status: its options on a line under the row, «;» between them (filled from the values its records carry)
+      const opts = h("input", { type: "text", value: (r.options || []).join("; "), maxLength: 3000,
+        placeholder: "Options, «;» between them — e.g. Draft; Published; Archived" });
+      opts.addEventListener("input", () => { r.options = opts.value.split(";").map((x) => x.trim().replace(/\s+/g, " ")).filter(Boolean); });
+      const optRow = h("div", { class: "nw-fopts" }, h("span", { class: "nw-fsrc" }, "Options"), opts);
+      const showOpts = () => { optRow.hidden = r.type !== "status"; };
       const row = h("div", { class: `nw-frow${r.on ? "" : " off"}` }, on, label, type,
-        h("span", { class: "nw-fsrc", title: (r.values || []).join(" · ") }, table ? r.column : r.key,
-          r.values?.length ? h("span", { class: "muted" }, ` — ${r.values.slice(0, 3).join(" · ")}`) : null));
+        h("span", { class: "nw-fsrc", title: (r.values || []).join(" · ") }, BUILTIN_KEYS.has(r.key) ? `${r.key} — the record's own day` : table ? r.column : r.key,
+          r.values?.length ? h("span", { class: "muted" }, ` — ${r.values.slice(0, 3).join(" · ")}`) : null), optRow);
       on.addEventListener("change", () => { r.on = on.checked; row.classList.toggle("off", !r.on); });
       label.addEventListener("input", () => { r.label = label.value; });
-      type.addEventListener("change", () => { r.type = type.value; });
+      type.addEventListener("change", () => {
+        r.type = type.value;
+        if (r.type === "status" && !(r.options || []).length) { r.options = [...(r.values || [])]; opts.value = r.options.join("; "); }
+        showOpts();
+      });
+      showOpts();
       return row;
     }) : h("p", { class: "nw-none" }, "No data"))) : null;
+  // domains: a card each -- its name, «Show on UI» (a box in the filters, All by default) or «Always applied» (no box: every
+  // search and count keeps to it), its conditions, one a row (a category or a field, and its values), all of them holding
+  const condsOf = (dom) => [
+    ...(dom.where?.category ? [{ what: "category", value: [].concat(dom.where.category) }] : []),
+    ...Object.entries(dom.where?.fields || {}).map(([k, v]) => ({ what: k, value: v }))];
+  const drows = doms.map((d) => ({ name: d.name, show: !!d.show, always: !!d.always, conds: condsOf(d) }));
+  const domBox = h("div", { class: "nw-doms" });
+  const whatOptions = () => [...(table ? [] : [["category", "Category"]]), ...defs.map((d) => [d.key, d.label])];
+  const valuesOf = (what) => (what === "category" ? crows.filter((c) => !c.gone && c.name.trim()).map((c) => c.name.trim())
+    : [...new Set([...(fdOf.get(what)?.values || []).map((x) => x.value), ...(fdOf.get(what)?.choices || [])])]);
+  function multiPick(cond, box) {   // any of the values ticked: a list under the row (one that pops up is cut by the cards' box)
+    const btn = h("button", { type: "button", class: "nw-pick" });
+    const relabel = () => { const v = [].concat(cond.value || []); btn.textContent = v.length ? v.join(", ") : "Pick values"; btn.title = btn.textContent; };
+    relabel();
+    btn.addEventListener("click", () => {
+      if (!box.hidden) { box.hidden = true; return; }
+      const all = valuesOf(cond.what), now = new Set([].concat(cond.value || []));
+      const list = h("div", { class: "nw-checks" }, ...(all.length ? all.map((v) => {
+        const cb = h("input", { type: "checkbox", checked: now.has(v) });
+        cb.addEventListener("change", () => { if (cb.checked) now.add(v); else now.delete(v); cond.value = [...now]; relabel(); });
+        return h("label", { class: "nw-check" }, cb, h("span", {}, v));
+      }) : [h("p", { class: "nw-none" }, "No data")]));
+      box.replaceChildren(list, h("div", { class: "nw-popfoot" }, h("button", { type: "button", class: "small",
+        onclick: () => { box.hidden = true; btn.focus(); } }, "‹ Back")));
+      box.hidden = false;
+    });
+    return btn;
+  }
+  function condValue(cond, box) {   // a condition's values, by the type of what it is on
+    const fd = cond.what === "category" ? { type: "list" } : fdOf.get(cond.what) || { type: "list" };
+    if (fd.type === "status") {
+      const sel = h("select", {}, h("option", { value: "" }, "—"), (fd.choices || []).map((c) => h("option", { value: c }, c)));
+      sel.value = typeof cond.value === "string" ? cond.value : "";
+      sel.addEventListener("change", () => { cond.value = sel.value || null; });
+      return sel;
+    }
+    if (fd.type === "bool") {
+      if (typeof cond.value !== "boolean") cond.value = true;
+      const sel = h("select", {}, [["1", "Yes"], ["0", "No"]].map(([v, l]) => h("option", { value: v }, l)));
+      sel.value = cond.value ? "1" : "0";
+      sel.addEventListener("change", () => { cond.value = sel.value === "1"; });
+      return sel;
+    }
+    if (fd.type === "number" || fd.type === "date") {
+      const was = cond.value && typeof cond.value === "object" && !Array.isArray(cond.value) ? cond.value : {};
+      cond.value = { from: was.from ?? null, to: was.to ?? null };
+      const end = (k, hint) => {
+        const inp = fd.type === "date" ? h("input", { type: "date", value: cond.value[k] || "" })
+          : h("input", { type: "text", inputMode: "decimal", placeholder: hint, value: cond.value[k] != null ? num(cond.value[k]) : "" });
+        inp.addEventListener("change", () => {
+          const typed = inp.value.trim();
+          cond.value = { ...cond.value, [k]: !typed ? null : fd.type === "date" ? typed : parseNum(typed) };
+        });
+        return inp;
+      };
+      return h("div", { class: "nw-dval" }, end("from", "from"), h("span", { class: "nw-ql" }, "–"), end("to", "to"));
+    }
+    return multiPick(cond, box);
+  }
+  function condRow(dom, cond) {
+    const what = h("select", {}, whatOptions().map(([v, l]) => h("option", { value: v }, l)));
+    what.value = cond.what;
+    const el = h("div", { class: "nw-dcond" }), slot = h("div", { class: "nw-dval" });
+    const pickBox = h("div", { class: "nw-dpick" });   // a list field's -- or the category's -- values, under the row
+    const drawValue = () => { pickBox.hidden = true; pickBox.replaceChildren(); slot.replaceChildren(condValue(cond, pickBox)); };
+    what.addEventListener("change", () => { cond.what = what.value; cond.value = null; drawValue(); });
+    drawValue();
+    el.append(what, slot, h("button", { type: "button", class: "small", title: "Remove", onclick: () => { dom.conds = dom.conds.filter((x) => x !== cond); drawDoms(); } }, "×"), pickBox);
+    return el;
+  }
+  function domCard(dom) {
+    const nameIn = h("input", { type: "text", value: dom.name, maxLength: 60, placeholder: "Domain name" });
+    nameIn.addEventListener("input", () => { dom.name = nameIn.value; });
+    const show = h("input", { type: "checkbox", checked: dom.show }), always = h("input", { type: "checkbox", checked: dom.always });
+    show.addEventListener("change", () => { dom.show = show.checked; if (dom.show) { dom.always = false; always.checked = false; } });
+    always.addEventListener("change", () => { dom.always = always.checked; if (dom.always) { dom.show = false; show.checked = false; } });
+    const addCond = () => {
+      const used = new Set(dom.conds.map((c) => c.what));
+      const free = whatOptions().find(([v]) => !used.has(v)) || whatOptions()[0];
+      if (!free) return;
+      dom.conds.push({ what: free[0], value: null });
+      drawDoms();
+    };
+    return h("div", { class: "nw-dcard" },
+      h("div", { class: "nw-dhead" }, nameIn,
+        h("label", { title: "Visitors pick this domain in the filters (All by default)" }, show, "Show on UI"),
+        h("label", { title: "Always applied, with no box to pick it" }, always, "Always applied"),
+        h("button", { type: "button", class: "small", title: "Delete domain", onclick: () => { drows.splice(drows.indexOf(dom), 1); drawDoms(); } }, "×")),
+      ...dom.conds.map((c) => condRow(dom, c)),
+      h("div", {}, h("button", { type: "button", class: "small", disabled: !whatOptions().length, onclick: addCond }, "+ Add condition")));
+  }
+  function drawDoms() {
+    closePop();
+    domBox.replaceChildren(...drows.map(domCard), h("div", {}, h("button", { type: "button", class: "small", onclick: () => {
+      drows.push({ name: "", show: false, always: false, conds: [] });
+      drawDoms();
+      domBox.querySelectorAll(".nw-dhead input[type=text]")[drows.length - 1]?.focus();
+    } }, "+ Add domain")));
+  }
+  drawDoms();
+  const domPane = withFields ? h("div", { class: "nw-pane" }, domBox) : null;
+  // sort: the options of the Sort box, as a shop has one -- «Applies when»: no domain picked, or a domain (one applied always is
+  // never picked); a card an option: its name, its pairs (what, up or down; the first decides), «Default» (one a group)
+  const sopts = sorts.map((x) => ({ dom: x.domain ? drows.find((d) => d.name.toLowerCase() === x.domain.toLowerCase()) || null : null,
+    name: x.name, keys: (x.keys || []).map((k) => ({ by: k.by, dir: k.dir || "asc" })), def: !!x.default }));
+  let sortScope = null;
+  const sortBox = h("div", { class: "nw-sorts" });
+  const byOptions = () => [...(table ? [] : [["category", "Category"]]), ...defs.filter((d) => !BUILTIN_KEYS.has(d.key)).map((d) => [d.key, d.label]),
+    ...BUILTIN_DATES];
+  function keyRow(o, k) {
+    const by = h("select", {}, byOptions().map(([v, l]) => h("option", { value: v }, l)));
+    by.value = k.by;
+    by.addEventListener("change", () => { k.by = by.value; });
+    const dir = h("select", {}, h("option", { value: "asc" }, "↑ Ascending"), h("option", { value: "desc" }, "↓ Descending"));
+    dir.value = k.dir;
+    dir.addEventListener("change", () => { k.dir = dir.value; });
+    return h("div", { class: "nw-skey" }, by, dir, h("button", { type: "button", class: "small", title: "Remove", disabled: o.keys.length < 2,
+      onclick: () => { o.keys.splice(o.keys.indexOf(k), 1); drawSorts(); } }, "×"));
+  }
+  function optCard(o) {
+    const nm = h("input", { type: "text", value: o.name, maxLength: 60, placeholder: "Option name — e.g. Price: low to high" });
+    nm.addEventListener("input", () => { o.name = nm.value; });
+    const def = h("input", { type: "checkbox", checked: o.def });
+    def.addEventListener("change", () => { for (const x of sopts) if (x.dom === o.dom) x.def = false; o.def = def.checked; drawSorts(); });
+    return h("div", { class: "nw-dcard" },
+      h("div", { class: "nw-dhead" }, nm, h("label", { title: "Picked in the Sort box before a search" }, def, "Default"), h("span", {}),
+        h("button", { type: "button", class: "small", title: "Delete option", onclick: () => { sopts.splice(sopts.indexOf(o), 1); drawSorts(); } }, "×")),
+      h("div", { class: "nw-spairs" }, ...o.keys.map((k) => keyRow(o, k)),   // the pairs, indented under the option's name
+        h("div", {}, h("button", { type: "button", class: "small", disabled: o.keys.length >= 3 || !byOptions().length, onclick: () => {
+          const used = new Set(o.keys.map((k) => k.by));
+          o.keys.push({ by: (byOptions().find(([v]) => !used.has(v)) || byOptions()[0])[0], dir: "asc" });
+          drawSorts();
+        } }, "+ Add pair"))));
+  }
+  function drawSorts() {
+    const pickable = drows.filter((d) => !d.always && d.name.trim());
+    if (sortScope && !pickable.includes(sortScope)) sortScope = null;
+    const scopeSel = h("select", {}, h("option", { value: "" }, "(No domain picked)"), pickable.map((d, i) => h("option", { value: String(i) }, d.name.trim())));
+    scopeSel.value = sortScope ? String(pickable.indexOf(sortScope)) : "";
+    scopeSel.addEventListener("change", () => { sortScope = scopeSel.value === "" ? null : pickable[Number(scopeSel.value)]; drawSorts(); });
+    const mine = sopts.filter((o) => o.dom === sortScope);
+    sortBox.replaceChildren(h("div", { class: "nw-sscope" }, h("span", { class: "nw-fsrc" }, "Applies when"), scopeSel), ...mine.map(optCard),
+      h("div", {}, h("button", { type: "button", class: "small", disabled: !byOptions().length || mine.length >= 10, onclick: () => {
+        sopts.push({ dom: sortScope, name: "", keys: [{ by: byOptions()[0][0], dir: "asc" }], def: !mine.length });
+        drawSorts();
+        sortBox.querySelectorAll(".nw-dhead input[type=text]")[mine.length]?.focus();
+      } }, "+ Add option")));
+  }
+  drawSorts();
+  const sortPane = withFields ? h("div", { class: "nw-pane" }, sortBox) : null;
+  const sortSig = () => sopts.map((x) => [x.dom ? drows.indexOf(x.dom) : -1, x.name, x.keys, x.def]);
+  start = JSON.stringify([crows, frows, drows, sortSig()]);
   // a tab each
-  const panes = [withCats ? ["cats", "Categories", catPane] : null, withFields ? ["fields", "Filter fields", fieldPane] : null].filter(Boolean);
+  const panes = [withCats ? ["cats", "Categories", catPane] : null, withFields ? ["fields", "Attributes", fieldPane] : null,
+    withFields ? ["domains", "Domains", domPane] : null, withFields ? ["sort", "Sort", sortPane] : null].filter(Boolean);
   const tabs = h("div", { class: "nw-tabs" });
   const showTab = (id) => {
+    if (id === "sort") drawSorts();   // the domains as the Domains tab has them now
     tabs.replaceChildren(...panes.map(([k, label]) => h("button", { type: "button", class: `nw-tab${k === id ? " on" : ""}`, onclick: () => showTab(k) }, label)));
     for (const [k, , pane] of panes) pane.hidden = k !== id;
   };
@@ -1111,9 +1396,52 @@ async function setupDialog(name, tab = null) {
     const drops = crows.filter((c) => c.from && c.gone && c.count > 0);
     const affected = [...renames, ...drops].reduce((n, c) => n + c.count, 0);
     if (affected && !(await confirmDialog(`${[...renames.map((c) => `Rename «${c.from}» to «${c.name.trim()}»`), ...drops.map((c) => `take «${c.from}» off`)].join("; ")}: ${plural(affected, "record", "records")} change. This cannot be undone.`, { ok: "Save" }))) return;
+    const domOut = [], sortOut = [];
     if (withFields) {
       const bad = frows.find((r) => r.on && !r.label.trim());
       if (bad) { err.textContent = "A field needs a label."; showTab("fields"); return; }
+      const noOpts = frows.find((r) => r.on && r.type === "status" && !(r.options || []).length);
+      if (noOpts) { err.textContent = `«${noOpts.label}» is a status: give its options.`; showTab("fields"); return; }
+      // the domains: each named once, a condition at least (a field once), a value each
+      const names = new Set();
+      for (const dom of drows) {
+        const nm = dom.name.trim().replace(/\s+/g, " ");
+        if (!nm) { err.textContent = "A domain needs a name."; showTab("domains"); return; }
+        if (names.has(nm.toLowerCase())) { err.textContent = `Two domains are named «${nm}».`; showTab("domains"); return; }
+        names.add(nm.toLowerCase());
+        const where = {}, seen = new Set();
+        for (const c of dom.conds) {
+          const v = c.value;
+          if (v == null || v === "" || (Array.isArray(v) && !v.length) || (typeof v === "object" && !Array.isArray(v) && v.from == null && v.to == null)) continue;
+          if (seen.has(c.what)) { err.textContent = `Domain «${nm}»: «${c.what === "category" ? "Category" : fdOf.get(c.what)?.label || c.what}» has two conditions.`; showTab("domains"); return; }
+          seen.add(c.what);
+          if (c.what === "category") where.category = [].concat(v);
+          else (where.fields ??= {})[c.what] = v;
+        }
+        if (!Object.keys(where).length) { err.textContent = `Domain «${nm}»: give it one condition at least.`; showTab("domains"); return; }
+        domOut.push({ name: nm, show: dom.show, always: dom.always, where });
+      }
+      // the sort options: named once a group (not «score»), a field once an option; those of a domain gone (or now applied always)
+      // go, so does a pair on an attribute let go (an option left with none too)
+      const snames = new Set(), perScope = new Map();
+      for (const o of sopts) {
+        if (o.dom && (!drows.includes(o.dom) || o.dom.always)) continue;
+        const dn = o.dom ? o.dom.name.trim().replace(/\s+/g, " ") : null, nm = o.name.trim().replace(/\s+/g, " ");
+        const fail = (msg) => { sortScope = o.dom; err.textContent = msg; showTab("sort"); };
+        if (!nm) { fail("A sort option needs a name."); return; }
+        if (nm.toLowerCase() === "score") { fail("«score» is the name of «Best match»."); return; }
+        const sk = `${(dn || "").toLowerCase()}|${nm.toLowerCase()}`;
+        if (snames.has(sk)) { fail(`Two sort options are named «${nm}».`); return; }
+        snames.add(sk);
+        const keys = o.keys.filter((k) => k.by === "category" || BUILTIN_KEYS.has(k.by) || frows.some((r) => r.on && r.key === k.by));
+        if (new Set(keys.map((k) => k.by)).size !== keys.length) { fail(`Option «${nm}»: an attribute twice.`); return; }
+        if (!keys.length) continue;
+        perScope.set(dn, (perScope.get(dn) || 0) + 1);
+        if (perScope.get(dn) > 10) { fail("At most 10 sort options a group."); return; }
+        sortOut.push({ domain: dn, name: nm, keys: keys.map((k) => ({ by: k.by, dir: k.dir })), default: o.def });
+      }
+      const kept = frows.find((r) => r.was && !r.on && domOut.some((d) => d.where.fields && r.key in d.where.fields));
+      if (kept) { err.textContent = `«${kept.label}» is a condition of a domain: it stays while one names it.`; showTab("domains"); return; }
     }
     btn.disabled = true;
     try {
@@ -1123,7 +1451,11 @@ async function setupDialog(name, tab = null) {
         const list = [...new Set(crows.filter((c) => !c.gone).map((c) => c.name.trim()).filter(Boolean))];
         await api("PUT", `/v1/neperi/collections/${enc(name)}/categories`, { categories: list });
       }
+      if (withFields) await api("PUT", `/v1/neperi/collections/${enc(name)}/domains`, { domains: domOut });   // before a field it no longer names goes
       if (withFields) await saveFields(name, frows, table);
+      if (withFields) await api("PUT", `/v1/neperi/collections/${enc(name)}/sort`, { sort: sortOut });   // after its fields
+      s.domains = {};
+      s.order = null;
       ui.close();
       toast("Saved", "ok");
       await afterWrite(name);
@@ -1133,10 +1465,10 @@ async function setupDialog(name, tab = null) {
     }
   };
   const ok = h("button", { class: "primary", onclick: () => save(ok) }, "Save");
-  const ui = sheet(`${table ? "Filter fields" : withFields ? "Categories & filter fields" : "Categories"} · ${name}`,
-    h("div", { class: "nw-form" }, panes.length > 1 ? tabs : null, panes.map(([, , p]) => p), err),
+  const ui = sheet(`${withFields ? "Store setup" : "Categories"} · ${name}`,
+    h("div", { class: "nw-form nw-setup" }, panes.length > 1 ? tabs : null, panes.map(([, , p]) => p), err),
     (leave) => [h("span", { class: "spacer" }), h("button", { onclick: leave }, "Cancel"), ok],
-    { dirty: () => JSON.stringify([crows, frows]) !== start, wide: true });
+    { dirty: () => JSON.stringify([crows, frows, drows, sortSig()]) !== start, wide: true });
 }
 // a store's filter fields as ticked. A field is the account's, read from a metadata key (or a table's column) in the
 // stores it names (none named: every store): one unticked goes when it was this store's only, else this store leaves its
@@ -1154,7 +1486,7 @@ async function saveFields(name, rows, table) {
     const d = all.get(r.key);
     const cols = d ? (d.collections.length ? [...new Set([...d.collections, name])] : []) : [name];
     await api("PUT", `/v1/neperi/fields/${enc(r.key)}`, { label: r.label.trim(), type: r.type, collections: cols, position: pos++,
-      ...(table && r.column ? { column: r.column } : {}) });
+      ...(table && r.column && !BUILTIN_KEYS.has(r.key) ? { column: r.column } : {}), ...(r.type === "status" ? { choices: r.options || [] } : {}) });
   }
 }
 
@@ -1269,7 +1601,7 @@ async function storesPage() {
       h("td", {}, isTable(c.name) ? `Table · ${plural(tables.get(c.name).columns.length, "column", "columns")}` : "Text"),
       h("td", { class: "num" }, num(c.items)), h("td", { class: "muted" }, ago(c.updated_at)),
       cfg.write ? h("td", { class: "nw-acts" },
-        cfg.admin || !isTable(c.name) ? h("button", { class: "small", title: "Categories & filter fields", onclick: (ev) => { ev.stopPropagation(); setupDialog(c.name); } }, "⚙") : null,
+        cfg.admin || !isTable(c.name) ? h("button", { class: "small", title: "Store setup", onclick: (ev) => { ev.stopPropagation(); setupDialog(c.name); } }, "⚙") : null,
         h("button", { class: "small danger", onclick: (ev) => { ev.stopPropagation(); deleteStoreDialog(c); } }, "Delete")) : null)))));
 }
 

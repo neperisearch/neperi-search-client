@@ -133,7 +133,10 @@ table.t tr.click:hover td { background: var(--panel-2); }
 }
 .nw-ql { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nw-q select, .nw-q input[type=text], .nw-q input[type=date] { font-size: 13px; padding: 4px 8px; width: 100%; min-width: 0; }
-.nw-q select.on, .nw-q input.on, .nw-pick.on { border-color: var(--accent); color: var(--accent); }
+.nw-q select.on, .nw-q input.on, .nw-pick.on, .nw-sortbar select.on { border-color: var(--accent); color: var(--accent); }
+.nw-sortbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px;
+  border-top: 1px solid var(--border); }
+.nw-sortbar select { font-size: 13px; padding: 4px 10px; min-width: 180px; }
 .nw-pick { font-size: 13px; padding: 4px 10px; width: 100%; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; font-weight: 400; background: var(--input); }
 .nw-pick::after { content: " ▾"; color: var(--muted); }
@@ -240,6 +243,11 @@ mark.lm { background: rgba(150, 110, 230, .2); padding: 0; border-radius: 2px; b
 .nw-tab:hover { background: none; color: var(--text); }
 .nw-tab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 650; }
 .nw-pane { display: grid; gap: 8px; }
+.nw-pane[hidden] { display: none; }
+/* The Store setup keeps one height
+   whatever its tab -- each tab scrolls inside it */
+.nw-setup > .nw-pane { height: min(56vh, 520px); overflow: auto; align-content: start; }
+.nw-setup .nw-cats, .nw-setup .nw-fields, .nw-setup .nw-doms { max-height: none; overflow: visible; }
 .nw-cats { display: grid; gap: 6px; max-height: min(55vh, 520px); overflow: auto; }
 .nw-crow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
 .nw-crow input[type=text] { width: 100%; }
@@ -253,3 +261,29 @@ mark.lm { background: rgba(150, 110, 230, .2); padding: 0; border-radius: 2px; b
 .nw-fhead { padding: 0 11px; font-size: 11.5px; color: var(--muted); }
 .nw-fsrc { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
 @media (max-width: 600px) { .nw-frow, .nw-fhead { grid-template-columns: auto 1fr; } }
+/* a status field's options (a line under its row); a store's domains -- a card each: its name, how it applies, its
+   conditions (a row each: what it is on, its values, x) */
+.nw-fopts { grid-column: 1 / -1; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: center; }
+.nw-fopts[hidden] { display: none; }
+.nw-doms { display: grid; gap: 10px; max-height: min(60vh, 560px); overflow: auto; align-content: start; }
+.nw-dcard { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: grid; gap: 6px; }
+.nw-dhead { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 12px; align-items: center; }
+.nw-dhead input[type=text] { width: 100%; font-weight: 600; }
+.nw-dhead label { display: inline-flex; gap: 5px; align-items: center; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+.nw-dcond { position: relative; display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: center; }
+.nw-dcond select, .nw-dcond input { width: 100%; min-width: 0; }
+.nw-dval { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.nw-dval > * { flex: 1 1 0; min-width: 0; }
+.nw-dval > .nw-ql { flex: none; }
+.nw-dpick { grid-column: 1 / -1; display: grid; gap: 6px; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px 8px; }
+.nw-dpick .nw-checks { max-height: 200px; }
+.nw-dpick[hidden] { display: none; }
+.nw-dcond .nw-dpick input[type=checkbox] { width: auto; flex: none; }
+/* a store's sort options -- for no domain or a domain picked; a card each: its name, its pairs (what, up or down) */
+.nw-sorts { display: grid; gap: 10px; align-content: start; }
+.nw-sscope { display: flex; gap: 10px; align-items: center; }
+.nw-sscope select { min-width: 220px; }
+.nw-skey { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.6fr) auto; gap: 8px; align-items: center; }
+.nw-skey select { width: 100%; min-width: 0; }
+.nw-spairs { display: grid; gap: 6px; margin-left: 18px; padding-left: 12px; border-left: 2px solid var(--border); }
+@media (max-width: 600px) { .nw-dhead { grid-template-columns: 1fr auto; } .nw-dcond { grid-template-columns: 1fr auto; } .nw-dcond .nw-dval { grid-column: 1 / -1; } }
